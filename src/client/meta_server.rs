@@ -8,8 +8,9 @@ use super::error::ApolloError;
 
 #[derive(PartialEq, Eq)]
 pub enum ApolloServerEnum {
-    ConfigServer,
-    PortalServer,
+    ConfigServer,       //xx:8080
+    AdminServer,        //xx:8090
+    PortalServer,       //xx:8070, no register in eureka by default 
 }
 
 #[derive(Debug)]
@@ -34,7 +35,7 @@ impl MetaServer {
         let kind = {
             if server_kind == ApolloServerEnum::ConfigServer {
                 "APOLLO-CONFIGSERVICE"
-            }else if server_kind == ApolloServerEnum::PortalServer {
+            }else if server_kind == ApolloServerEnum::AdminServer {
                 "APOLLO-ADMINSERVICE"
             }else {
                 "UNKNOWN"
