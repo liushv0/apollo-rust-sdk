@@ -1,3 +1,4 @@
+//config client 提供基础的配置拉取/监听功能
 
 #[tokio::main]
 async fn main() {

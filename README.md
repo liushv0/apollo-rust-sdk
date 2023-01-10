@@ -6,5 +6,6 @@ A simple client for Apollo config server.
 
 ## Use case
 
-see `examples/sample-example.rs`
+see `examples/config-client-example.rs`
+see `examples/openapi-client-example.rs` 
 

@@ -83,6 +83,7 @@ mod tests {
         create_config();
     }
 
+    #[test]
     fn get_env_and_cluster() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -91,6 +92,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_apps() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let res = api_cli.get_apps();
@@ -98,6 +100,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_cluster() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -108,6 +111,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn create_cluster() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let env = "DEV";
@@ -121,6 +125,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_all_namespaces() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -132,6 +137,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_ns_detail() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -144,6 +150,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn create_namespace() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -165,6 +172,7 @@ mod tests {
 
     }
 
+    #[test]
     fn get_current_editor() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -176,6 +184,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_config() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -187,6 +196,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn create_config() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -205,6 +215,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn update_config() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -225,6 +236,7 @@ mod tests {
 
     }
 
+    #[test]
     fn delete_config() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -236,6 +248,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn release_config() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
@@ -252,6 +265,7 @@ mod tests {
         println!("{:?}", res);
     }
 
+    #[test]
     fn get_namespace_latest_release() {
         let api_cli = ApolloOpenApiClient::new(PORTAL_URL, TOKEN);
         let app = "SampleApp";
