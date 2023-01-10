@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{meta_server::{MetaServer, ApolloServerEnum}, error::ApolloError};
 
-pub struct ApolloConfigClient (Arc<Mutex<(apollo_config_client, config_cache, tokio::sync::watch::Sender<bool>)>>);
+/// 包含四个元素: 实际的client, 配置缓存, close signal sender channel, config change events receiver channel
+pub struct ApolloConfigClient (Arc<Mutex<(apollo_config_client, config_cache, tokio::sync::watch::Sender<bool>, tokio::sync::broadcast::Receiver<Vec<ApolloChangeEvent>>)>>);
 
 #[allow(non_camel_case_types)]
 type config_cache = Vec<Arc<Mutex<apollo_namespace>>>;
@@ -53,6 +54,21 @@ struct notification_item {
     notification_id: i32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ApolloChangeEvent {
+    namespace: String,
+    key: String,
+    new_value: String,
+    action: ApolloChangeAction,
+}
+
+#[derive(Debug, Clone)]
+pub enum ApolloChangeAction {
+    DELETE,
+    UPDATE,
+    ADD,
+}
+
 
 pub async fn new(meta_server: Vec<&str>, app_id: &str, cluster_name: &str, namespaces: Option<Vec<&str>>, secret: Option<&str>) -> Result<ApolloConfigClient, ApolloError> {
     let ms = MetaServer::new(meta_server);
@@ -90,8 +106,9 @@ pub async fn new(meta_server: Vec<&str>, app_id: &str, cluster_name: &str, names
     };
 
     let (close_tx, close_rx) = tokio::sync::watch::channel(false);
+    let (change_event_tx, cheange_event_rx) = tokio::sync::broadcast::channel(10);
 
-    let cc_arc = Arc::new(Mutex::new((cc, Vec::new(), close_tx)));
+    let cc_arc = Arc::new(Mutex::new((cc, Vec::new(), close_tx, cheange_event_rx)));
     let cc_arc_clone = cc_arc.clone();
     let apc = ApolloConfigClient(cc_arc);
     let apc_2 = ApolloConfigClient(cc_arc_clone);
@@ -112,7 +129,7 @@ pub async fn new(meta_server: Vec<&str>, app_id: &str, cluster_name: &str, names
     
     let _ =thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(apc_2.loop_listening(close_rx));
+        rt.block_on(apc_2.loop_listening(close_rx, change_event_tx));
     });
 
     return Ok(apc); 
@@ -166,7 +183,7 @@ impl ApolloConfigClient {
         return None;
     }
 
-    /// pull config from namespace, and will listen change of this namespace, if namespace has listened already, do nothing
+    /// pull config from namespace, and will listen change`s notify of this namespace, if namespace has be listened already, do nothing
     /// 如果先后监听了多个namespace，排在后面的配置优先级更高
     pub async fn listen_namespace(&self, namespace: &str) -> Option<ApolloError> {
         let load_res = self.load_namespace(namespace, false, None).await;
@@ -282,6 +299,17 @@ impl ApolloConfigClient {
         //todo 加个close标志位？
     }
 
+    /// try fetch change event, non block
+    pub fn fetch_change_event(&self) -> Option<Vec<ApolloChangeEvent>> {
+        let mut apc = self.0.lock().unwrap();
+        let rec = apc.3.try_recv();
+        if rec.is_err() {
+            return None;
+        }
+        let res = rec.unwrap();
+        Some(res)
+    }
+
     async fn namespace_notify(&self) -> Vec<notification_item> {
         let mut ns_list = Vec::new();
         let apc = self.0.lock().unwrap();
@@ -310,7 +338,7 @@ impl ApolloConfigClient {
         let notify_str = serde_json::to_string(&ns_list).unwrap();
         let notify_str: String = url::form_urlencoded::byte_serialize(notify_str.as_bytes()).collect();
 
-        let notify_url_path = format!("/notifications/v2?appId={}&cluster={}&notifications={}", "SampleApp", "DEV", notify_str);
+        let notify_url_path = format!("/notifications/v2?appId={}&cluster={}&notifications={}", apc.0.app_id_default, apc.0.cluster_default, notify_str);
         
         let cli = reqwest::Client::new();
         let mut req_builder = cli.get(format!("{host}{path}", host=cfg_srv_addr, path=notify_url_path));
@@ -349,10 +377,10 @@ impl ApolloConfigClient {
         ns_changed
     }
 
-    async fn loop_listening(&self, mut close_rx: tokio::sync::watch::Receiver<bool>) {
-        let start = tokio::time::Instant::now().checked_add(tokio::time::Duration::from_secs(1)).unwrap();
+    async fn loop_listening(&self, mut close_rx: tokio::sync::watch::Receiver<bool>, change_event_tx: tokio::sync::broadcast::Sender<Vec<ApolloChangeEvent>>) {
+        let start = tokio::time::Instant::now().checked_add(tokio::time::Duration::from_secs(5)).unwrap();
         let mut meta_refresh_ticker = tokio::time::interval_at(start, std::time::Duration::from_secs(30));
-
+        
         loop {
             tokio::select! {
                 //监听关闭
@@ -415,18 +443,22 @@ impl ApolloConfigClient {
                             ..cfg
                         };
                         change_ns.insert(ele.namespace, cfg_new);
-        
                     }
                     
-                    log::debug!("config...new...{:?}", change_ns);
+                    log::debug!("config change, new config: {:?}", change_ns);
                     if change_ns.len() > 0 {
                         let mut apc = self.0.lock().unwrap();
                         let cache = &apc.1.clone();
+
                         let mut cache_new = Vec::new();
                         for ele in cache {
                             let an = ele.lock().unwrap();
                             if change_ns.contains_key(&an.namespace) {
                                 let cfg = change_ns.remove(&an.namespace).unwrap();
+                                let diff = apollo_namespace_diff(&cfg, &an);
+                                if diff.len() > 0 {
+                                    let _ = change_event_tx.send(diff);     //check result?
+                                }
                                 cache_new.push(Arc::new(Mutex::new(cfg)));
                             }else {
                                 cache_new.push(ele.clone());
@@ -441,6 +473,7 @@ impl ApolloConfigClient {
     }
 }
 
+/// request signature
 fn apollo_req_sign(secert: &str, app_id: &str, path: &str) -> Vec<(String, String)> {
     let mut res = Vec::new();
     if secert.len() == 0 {
@@ -458,5 +491,49 @@ fn apollo_req_sign(secert: &str, app_id: &str, path: &str) -> Vec<(String, Strin
 
     res.push(("Timestamp".to_string(), ts.to_string()));
     res.push(("Authorization".to_string(), sign));
+    return res;
+}
+
+/// 比较新旧配置区别
+fn apollo_namespace_diff(new_cfg: &apollo_namespace, old_cfg: &apollo_namespace) -> Vec<ApolloChangeEvent> {
+    let mut res = Vec::new();
+    for (key, value) in &old_cfg.configurations {
+        let v_new = new_cfg.configurations.get(key);
+        if v_new.is_none() {
+            let event = ApolloChangeEvent{
+                namespace: old_cfg.namespace.clone(),
+                key: key.clone(),
+                new_value: "".to_string(),
+                action: ApolloChangeAction::DELETE,
+            };
+            res.push(event);
+            continue;
+        }
+        let v_new = v_new.unwrap();
+        if v_new != value {
+            let event = ApolloChangeEvent{
+                namespace: old_cfg.namespace.clone(),
+                key: key.clone(),
+                new_value: v_new.to_string(),
+                action: ApolloChangeAction::UPDATE,
+            };
+            res.push(event);
+            continue;
+        }
+        continue;
+    }
+    for (key, value) in &new_cfg.configurations {
+        let v_old = old_cfg.configurations.get(key);
+        if v_old.is_none() {
+            let event = ApolloChangeEvent{
+                namespace: old_cfg.namespace.clone(),
+                key: key.clone(),
+                new_value: value.to_string(),
+                action: ApolloChangeAction::ADD,
+            };
+            res.push(event);
+            continue;
+        }
+    }
     return res;
 }
